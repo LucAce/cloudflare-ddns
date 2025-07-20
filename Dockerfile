@@ -15,5 +15,5 @@ RUN apk update  && \
     apk upgrade && \
     apk add --no-cache python3 py3-requests
 
-# Execute the script in service mode
+# Execute the script
 CMD ["/usr/bin/python3", "/app/cloudflare-ddns.py"]
