@@ -15,8 +15,10 @@ RUN apk update  && \
     apk upgrade && \
     apk add --no-cache python3 py3-requests
 
-# Dockerfile Label
-LABEL org.opencontainers.image.source="https://github.com/LucAce/cloudflare-ddns"
+# Dockerfile Labels
+LABEL org.opencontainers.image.source="https://github.com/lucace/cloudflare-ddns"
+LABEL org.opencontainers.image.description="Updates a Cloudflare DNS A Record with the host's public IPv4 address"
+LABEL org.opencontainers.image.licenses="MIT"
 
 # Execute the script
 CMD ["/usr/bin/python3", "/app/cloudflare-ddns.py"]
