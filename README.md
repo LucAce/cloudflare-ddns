@@ -25,9 +25,9 @@ Copy and modify the `docker-compose.yml` file with the following environment var
 | DOMAIN_TTL         | Optional    | 3600    | DNS Record Time to Live in Seconds |
 | UPDATE_RATE        | Optional    | 900     | Polling Update Rate in Seconds     |
 
-[!NOTE]
-"{{ CLOUDFLARE_API_KEY }}", "{{ CLOUDFLARE_ZONE_ID }}", "{{ DOMAIN NAME }}" in the
-docker-compose.yml file are just placeholders and must be replaced with the actual values.
+> [!IMPORTANT]
+> "{{ CLOUDFLARE_API_KEY }}", "{{ CLOUDFLARE_ZONE_ID }}", "{{ DOMAIN NAME }}" in the
+> docker-compose.yml file are just placeholders and must be replaced with the actual values.
 
 ```yaml
 services:
