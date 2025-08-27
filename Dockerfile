@@ -15,5 +15,8 @@ RUN apk update  && \
     apk upgrade && \
     apk add --no-cache python3 py3-requests
 
+# Dockerfile Label
+LABEL org.opencontainers.image.source="https://github.com/LucAce/cloudflare-ddns"
+
 # Execute the script
 CMD ["/usr/bin/python3", "/app/cloudflare-ddns.py"]
