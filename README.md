@@ -1,5 +1,8 @@
 # Cloudflare Dynamic DNS
 
+[![Build](https://github.com/LucAce/cloudflare-ddns/actions/workflows/publish-ghcr.yaml/badge.svg?branch=main)](https://github.com/LucAce/cloudflare-ddns/actions/workflows/publish-ghcr.yaml)
+[![License: MIT](https://cdn.prod.website-files.com/5e0f1144930a8bc8aace526c/65dd9eb5aaca434fac4f1c34_License-MIT-blue.svg)](/LICENSE)
+
 Simple python based application that updates a Cloudflare DNS A record entry with
 the host's public IPv4 address.
 

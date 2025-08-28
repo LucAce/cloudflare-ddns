@@ -1,0 +1,17 @@
+services:
+  cloudflare-ddns:
+    container_name: cloudflare-ddns
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    environment:
+      VERBOSE: True
+      CLOUDFLARE_API_KEY: {{ CLOUDFLARE_API_KEY }}
+      CLOUDFLARE_ZONE_ID: {{ CLOUDFLARE_ZONE_ID }}
+      DOMAIN_NAME: {{ DOMAIN NAME }}
+      DOMAIN_TTL: 3600
+      UPDATE_RATE: 900
+    restart: unless-stopped
+    read_only: True
+    cap_drop: [all]
+    security_opt: [no-new-privileges:true]
