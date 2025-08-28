@@ -86,7 +86,6 @@ class CloudflareDDNS():
         self.zone_id     = zone_id
         self.domain_name = domain_name
         self.domain_ttl  = domain_ttl
-
         self.record_id   = None
         self.ipv4        = None
         self.ipv4_lkg    = None
@@ -132,7 +131,8 @@ class CloudflareDDNS():
 
     #--------------------------------------------------------------------------
     # Function: get_public_ipv4
-    # Request the public IPv4 address from ipify.org.
+    # Request the public IPv4 address from Cloudflare cdn-cgi/trace with a
+    # fallback request to ipify.org.
     #
     # Returns:
     # bool - True if successful; False otherwise
@@ -345,17 +345,19 @@ def main():
         logging.debug("Using provided DOMAIN_NAME value")
 
     # Get optional DOMAIN_TTL environment variable
-    domain_ttl = int(os.environ.get('DOMAIN_TTL'))
+    domain_ttl = os.environ.get('DOMAIN_TTL')
     if isinstance(domain_ttl, int):
         logging.debug("Using provided DOMAIN_TTL value")
+        domain_ttl = int(domain_ttl)
     else:
         logging.debug("Using default DOMAIN_TTL value")
         domain_ttl = int(DEFAULT_DOMAIN_TTL)
 
     # Get optional UPDATE_RATE environment variable
-    update_rate = int(os.environ.get('UPDATE_RATE'))
+    update_rate = os.environ.get('UPDATE_RATE')
     if isinstance(update_rate, int):
         logging.debug("Using provided UPDATE_RATE value")
+        update_rate = int(update_rate)
     else:
         logging.debug("Using default UPDATE_RATE value")
         update_rate = int(DEFAULT_UPDATE_RATE)
