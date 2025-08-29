@@ -35,6 +35,7 @@ Copy and modify the `docker-compose.yml` file with the following environment var
 ```yaml
 services:
   cloudflare-ddns:
+    container_name: cloudflare-ddns
     image: ghcr.io/lucace/cloudflare-ddns:latest
     environment:
       VERBOSE: True
@@ -54,5 +55,5 @@ services:
 From the `docker-compose.yml` location, start the container.
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```

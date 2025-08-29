@@ -1,5 +1,6 @@
 services:
   cloudflare-ddns:
+    container_name: cloudflare-ddns
     image: ghcr.io/lucace/cloudflare-ddns:latest
     environment:
       VERBOSE: True
