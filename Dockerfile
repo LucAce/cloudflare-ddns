@@ -7,17 +7,17 @@ WORKDIR /app
 # Copy the script into the app directory
 COPY src/cloudflare-ddns.py /app
 
-# Add the Build Date as an environment variable
-ARG BUILD_DATE
-ENV BUILD_DATE=$BUILD_DATE
-
-# Disable Python console buffering
-ENV PYTHONUNBUFFERED=1
-
 # Get system updates and install dependencies
 RUN apk update  && \
     apk upgrade && \
     apk add --no-cache python3 py3-requests
+
+# Disable Python console buffering
+ENV PYTHONUNBUFFERED=1
+
+# Add the Build Date as an environment variable
+ARG BUILD_DATE
+ENV BUILD_DATE=$BUILD_DATE
 
 # Dockerfile Labels
 LABEL org.opencontainers.image.source="https://github.com/lucace/cloudflare-ddns"
