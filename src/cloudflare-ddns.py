@@ -345,22 +345,22 @@ def main():
         logging.debug("Using provided DOMAIN_NAME value")
 
     # Get optional DOMAIN_TTL environment variable
-    domain_ttl = os.environ.get('DOMAIN_TTL')
-    if isinstance(domain_ttl, int):
+    domain_ttl_env = os.environ.get('DOMAIN_TTL')
+    try:
+        domain_ttl = int(domain_ttl_env)
         logging.debug("Using provided DOMAIN_TTL value")
-        domain_ttl = int(domain_ttl)
-    else:
-        logging.debug("Using default DOMAIN_TTL value")
+    except:
         domain_ttl = int(DEFAULT_DOMAIN_TTL)
+        logging.debug("Using default DOMAIN_TTL value")
 
     # Get optional UPDATE_RATE environment variable
-    update_rate = os.environ.get('UPDATE_RATE')
-    if isinstance(update_rate, int):
+    update_rate_env = os.environ.get('UPDATE_RATE')
+    try:
+        update_rate = int(update_rate_env)
         logging.debug("Using provided UPDATE_RATE value")
-        update_rate = int(update_rate)
-    else:
-        logging.debug("Using default UPDATE_RATE value")
+    except:
         update_rate = int(DEFAULT_UPDATE_RATE)
+        logging.debug("Using default UPDATE_RATE value")
 
     # Create update object
     ddns = CloudflareDDNS(
