@@ -8,6 +8,7 @@ on:
 jobs:
   delete-packages:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
 
       - name: Delete Out of Date Packages
