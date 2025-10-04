@@ -3,12 +3,12 @@
 [![Build](https://github.com/LucAce/cloudflare-ddns/actions/workflows/publish-ghcr.yaml/badge.svg?branch=main)](https://github.com/LucAce/cloudflare-ddns/actions/workflows/publish-ghcr.yaml)
 [![License: MIT](https://cdn.prod.website-files.com/5e0f1144930a8bc8aace526c/65dd9eb5aaca434fac4f1c34_License-MIT-blue.svg)](/LICENSE)
 
-Simple python based application that updates a Cloudflare DNS A record entry with
-the host's public IPv4 address.
+Simple Python based application that updates a Cloudflare DNS A record entry with
+a host's public IPv4 address.
 
 The application polls Cloudflare's `cdn-cgi/trace` data every 15 minutes to
 determine the host's public IPv4 address.  On start up and on a change, the
-new IPv4 address is updated.
+IPv4 address is updated.
 
 # Deploy with Docker Compose
 
@@ -19,7 +19,7 @@ Pre-compiled images are available via the GitHub docker repository:
 
 Copy and modify the `docker-compose.yml` file with the following environment variables:
 
-| Variable           | Type    | Required | Default |  Description                       |
+| Variable           | Type    | Required | Default | Description                        |
 |:------------------ |:------- |:--------:|:-------:|:---------------------------------- |
 | CLOUDFLARE_API_KEY | String  | Yes      | _None_  | Cloudflare API Key                 |
 | CLOUDFLARE_ZONE_ID | String  | Yes      | _None_  | Cloudflare DNS Entry Zone ID       |
@@ -29,8 +29,8 @@ Copy and modify the `docker-compose.yml` file with the following environment var
 | UPDATE_RATE        | Integer | No       | 900     | Polling Update Rate in Seconds     |
 
 > [!IMPORTANT]
-> "{{ CLOUDFLARE_API_KEY }}", "{{ CLOUDFLARE_ZONE_ID }}", "{{ DOMAIN NAME }}" in the
-> `docker-compose.yml` file are placeholders and must be replaced with actual values.
+> "{{ CLOUDFLARE_API_KEY }}", "{{ CLOUDFLARE_ZONE_ID }}", and "{{ DOMAIN NAME }}" in the
+> `docker-compose.yml` file example are placeholders and must be replaced with actual values.
 
 ```yaml
 services:
