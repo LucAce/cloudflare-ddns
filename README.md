@@ -19,18 +19,18 @@ Pre-compiled images are available via the GitHub docker repository:
 
 Copy and modify the `docker-compose.yml` file with the following environment variables:
 
-| Variable           | Type        | Default |  Description                       |
-|:------------------ |:----------- |:------- |:---------------------------------- |
-| CLOUDFLARE_API_KEY | Required    | _None_  | Cloudflare API Key                 |
-| CLOUDFLARE_ZONE_ID | Required    | _None_  | Cloudflare DNS Entry Zone ID       |
-| DOMAIN_NAME        | Required    | _None_  | Domain Name to Manage              |
-| VERBOSE            | Optional    | False   | Enable Verbose Messages            |
-| DOMAIN_TTL         | Optional    | 3600    | DNS Record Time to Live in Seconds |
-| UPDATE_RATE        | Optional    | 900     | Polling Update Rate in Seconds     |
+| Variable           | Type    | Required | Default |  Description                       |
+|:------------------ |:------- |:--------:|:-------:|:---------------------------------- |
+| CLOUDFLARE_API_KEY | String  | Yes      | _None_  | Cloudflare API Key                 |
+| CLOUDFLARE_ZONE_ID | String  | Yes      | _None_  | Cloudflare DNS Entry Zone ID       |
+| DOMAIN_NAME        | String  | Yes      | _None_  | Domain Name to Manage              |
+| VERBOSE            | Boolean | No       | False   | Enable Verbose Messages            |
+| DOMAIN_TTL         | Integer | No       | 3600    | DNS Record Time to Live in Seconds |
+| UPDATE_RATE        | Integer | No       | 900     | Polling Update Rate in Seconds     |
 
 > [!IMPORTANT]
 > "{{ CLOUDFLARE_API_KEY }}", "{{ CLOUDFLARE_ZONE_ID }}", "{{ DOMAIN NAME }}" in the
-> docker-compose.yml file are just placeholders and must be replaced with the actual values.
+> `docker-compose.yml` file are placeholders and must be replaced with actual values.
 
 ```yaml
 services:
