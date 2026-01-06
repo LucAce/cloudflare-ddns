@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #------------------------------------------------------------------------------
-#  Copyright (c) 2024-2025 LucAce
+#  Copyright (c) 2024-2026 LucAce
 #
 #  Permission is hereby granted, free of charge, to any person obtaining a
 #  copy of this software and associated documentation files (the "Software"),
@@ -40,6 +40,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import requests
 import time
 import traceback
@@ -82,10 +83,10 @@ class CloudflareDDNS():
     # domain_ttl  - Domain Time to Live
     #--------------------------------------------------------------------------
     def __init__(self, api_key, zone_id, domain_name, domain_ttl):
-        self.api_key     = api_key
-        self.zone_id     = zone_id
-        self.domain_name = domain_name
-        self.domain_ttl  = domain_ttl
+        self.api_key     = self.sanitize_key(api_key)
+        self.zone_id     = self.sanitize_id(zone_id)
+        self.domain_name = self.sanitize_domain(domain_name)
+        self.domain_ttl  = self.sanitize_ttl(domain_ttl)
         self.record_id   = None
         self.ipv4        = None
         self.ipv4_lkg    = None
@@ -127,6 +128,139 @@ class CloudflareDDNS():
 
         logging.info("Updated DNS Record: " + str(self.domain_name) + ". " + \
                      str(self.domain_ttl) + " IN A " + str(self.ipv4))
+
+
+    #--------------------------------------------------------------------------
+    # Function: sanitize_key
+    # Sanitize Cloudflare API Key, return None if not valid.
+    #
+    # Parameters:
+    # key - Cloudflare API Key to sanitize
+    #
+    # Returns:
+    # string - Sanitized Cloudflare API Key
+    #--------------------------------------------------------------------------
+    def sanitize_key(self, key):
+        # Return None if nothing provided
+        if not key:
+            logging.debug("No Key Provided for Sanitization")
+            return None
+
+        # Trim and convert to lower case
+        try:
+            key = str(key).strip()
+        except:
+            return None
+
+        # Return if not valid
+        if not re.fullmatch(r'^[A-Za-z0-9_-]+$', key):
+            logging.debug("Key Failed Sanitization")
+            return None
+
+        return key
+
+
+    #--------------------------------------------------------------------------
+    # Function: sanitize_id
+    # Sanitize IDs, return None if not valid.
+    #
+    # Parameters:
+    # id - Cloudflare ID to sanitize
+    #
+    # Returns:
+    # string - Sanitized Cloudflare ID
+    #--------------------------------------------------------------------------
+    def sanitize_id(self, id):
+        # Return None if nothing provided
+        if not id:
+            logging.debug("No ID Provided for Sanitization")
+            return None
+
+        # Trim and convert to lower case
+        try:
+            id = str(id).strip().lower()
+        except:
+            return None
+
+        # Return if not valid
+        if not re.fullmatch(r'[0-9a-f]{32}', id):
+            logging.debug("ID Failed Sanitization")
+            return None
+
+        return id
+
+
+    #--------------------------------------------------------------------------
+    # Function: sanitize_domain
+    # Sanitize domain name, return None if not valid.
+    #
+    # Parameters:
+    # domain - Domain name to sanitize
+    #
+    # Returns:
+    # string - Sanitized domain name
+    #--------------------------------------------------------------------------
+    def sanitize_domain(self, domain):
+        # Return None if nothing provided
+        if not domain:
+            logging.debug("No Domain Name Provided for Sanitization")
+            return None
+
+        # Trim and convert to lower case
+        try:
+           domain = str(domain).strip().lower()
+        except:
+            return None
+
+        # Check for only allowed characters
+        if not re.fullmatch(r"[a-z0-9.-]+", domain):
+            logging.debug("Domain Name Failed Character Sanitization")
+            return None
+
+        # Cannot start or end with dot or hyphen
+        if domain.startswith((".", "-")) or domain.endswith((".", "-")):
+            logging.debug("Domain Name Failed Start/End Character Sanitization")
+            return None
+
+        # Split into labels and validate each
+        labels = domain.split(".")
+        for label in labels:
+            # No empty labels (e.g., "example..com")
+            if not label:
+                logging.debug("Sub-Domain Name Failed Start/End Character Sanitization")
+                return None
+
+            # Labels cannot start or end with hyphens
+            if label.startswith("-") or label.endswith("-"):
+                logging.debug("Sub-Domain Name Failed Start/End Character Sanitization")
+                return None
+
+        return domain
+
+
+    #--------------------------------------------------------------------------
+    # Function: sanitize_ttl
+    # Sanitize TTL, return the default value if not valid.
+    #
+    # Parameters:
+    # ttl - TTL value to sanitize
+    #
+    # Returns:
+    # int - Sanitized TTL
+    #--------------------------------------------------------------------------
+    def sanitize_ttl(self, ttl):
+        # Return default if nothing provided
+        if not ttl:
+            logging.debug("No TTL Provided for Sanitization")
+            return int(DEFAULT_DOMAIN_TTL)
+
+        # Ensure value is an integer
+        try:
+            ttl = int(ttl)
+        except:
+            ttl = int(DEFAULT_DOMAIN_TTL)
+
+        return ttl
 
 
     #--------------------------------------------------------------------------
@@ -239,8 +373,12 @@ class CloudflareDDNS():
                  "name" in entry and
                  str(entry["type"].upper()) == "A" and
                  str(entry["name"].lower()) == str(self.domain_name).lower() ):
-                self.record_id = str(entry["id"]).lower()
-                return True
+                self.record_id = self.sanitize_id(str(entry["id"]))
+                if self.record_id is None:
+                    logging.debug("Invalid Record ID")
+                    return False
+                else:
+                    return True
 
         # Return False if the Record ID was not found
         logging.debug("Record ID Not Found")
