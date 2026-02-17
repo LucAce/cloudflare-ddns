@@ -37,7 +37,6 @@
 
 import sys
 import ipaddress
-import json
 import logging
 import os
 import re
@@ -90,6 +89,13 @@ class CloudflareDDNS():
         self.record_id   = None
         self.ipv4        = None
         self.ipv4_lkg    = None
+
+        if self.api_key is None:
+            raise ValueError("Invalid or missing API key")
+        if self.zone_id is None:
+            raise ValueError("Invalid or missing Zone ID")
+        if self.domain_name is None:
+            raise ValueError("Invalid or missing Domain")
 
 
     #--------------------------------------------------------------------------
@@ -146,15 +152,21 @@ class CloudflareDDNS():
             logging.debug("No Key Provided for Sanitization")
             return None
 
-        # Trim and convert to lower case
+        # Limit the allowed key size
+        if len(str(key)) > 256:
+            logging.debug("Key Size Failed Sanitization")
+            return None
+
+        # Trim and ensure value is a string
         try:
             key = str(key).strip()
-        except:
+        except (ValueError, TypeError, AttributeError) as e:
+            logging.debug(f"Key Failed Sanitization: {e}")
             return None
 
         # Return if not valid
         if not re.fullmatch(r'^[A-Za-z0-9_-]+$', key):
-            logging.debug("Key Failed Sanitization")
+            logging.debug("Key Failed Sanitization: regex")
             return None
 
         return key
@@ -176,15 +188,21 @@ class CloudflareDDNS():
             logging.debug("No ID Provided for Sanitization")
             return None
 
-        # Trim and convert to lower case
+        # Limit the allowed ID size
+        if len(str(id)) > 32:
+            logging.debug("ID Size Failed Sanitization")
+            return None
+
+        # Trim and convert to lower case string
         try:
             id = str(id).strip().lower()
-        except:
+        except (ValueError, TypeError, AttributeError) as e:
+            logging.debug(f"ID Failed Sanitization: {e}")
             return None
 
         # Return if not valid
         if not re.fullmatch(r'[0-9a-f]{32}', id):
-            logging.debug("ID Failed Sanitization")
+            logging.debug("ID Failed Sanitization: regex")
             return None
 
         return id
@@ -206,10 +224,16 @@ class CloudflareDDNS():
             logging.debug("No Domain Name Provided for Sanitization")
             return None
 
-        # Trim and convert to lower case
+        # Limit the allowed domain size
+        if len(str(domain)) > 253:
+            logging.debug("Domain Size Failed Sanitization")
+            return None
+
+        # Trim and convert to lower case string
         try:
            domain = str(domain).strip().lower()
-        except:
+        except (ValueError, TypeError, AttributeError) as e:
+            logging.debug(f"Domain Failed Sanitization: {e}")
             return None
 
         # Check for only allowed characters
@@ -251,13 +275,19 @@ class CloudflareDDNS():
     def sanitize_ttl(self, ttl):
         # Return default if nothing provided
         if not ttl:
-            logging.debug("No TTL Provided for Sanitization")
+            logging.debug("No TTL Provided for Sanitization, Using Default")
+            return int(DEFAULT_DOMAIN_TTL)
+
+        # Limit the allowed TTL size
+        if len(str(ttl)) > 5:
+            logging.debug("TTL Size Failed Sanitization, Using Default")
             return int(DEFAULT_DOMAIN_TTL)
 
         # Ensure value is an integer
         try:
             ttl = int(ttl)
-        except:
+        except (ValueError, TypeError, AttributeError) as e:
+            logging.warning("TTL Failed Sanitization, Using Default")
             ttl = int(DEFAULT_DOMAIN_TTL)
 
         return ttl
@@ -278,7 +308,8 @@ class CloudflareDDNS():
         # Get the IPv4 address from Cloudflare's trace
         try:
             # Query for the public IPv4 address
-            response = requests.get('https://api.cloudflare.com/cdn-cgi/trace')
+            url = 'https://api.cloudflare.com/cdn-cgi/trace'
+            response = requests.get(url, verify=True, timeout=30)
 
             # Raise an exception if a non-valid status was returned
             response.raise_for_status()
@@ -296,7 +327,7 @@ class CloudflareDDNS():
             # Return True if no exceptions were raised
             return True
 
-        except:
+        except Exception as e:
             # Return False on any exception
             logging.debug("Public IPv4 Request from Cloudflare Failed")
             pass
@@ -304,7 +335,8 @@ class CloudflareDDNS():
         # Fall back to ipify for IPv4 if first attempt failed
         try:
             # Query for the public IPv4 address
-            response = requests.get('https://api.ipify.org?format=json')
+            url = 'https://api.ipify.org?format=json'
+            response = requests.get(url, verify=True, timeout=30)
 
             # Raise an exception if a non-valid status was returned
             response.raise_for_status()
@@ -318,7 +350,7 @@ class CloudflareDDNS():
             # Return True if no exceptions were raised
             return True
 
-        except:
+        except Exception as e:
             # Return False on any exception
             logging.debug("Public IPv4 Request from ipify Failed")
             return False
@@ -345,7 +377,9 @@ class CloudflareDDNS():
 
         try:
             # Query for the Record IDs
-            response = requests.get(url, headers=headers)
+            response = requests.get(
+                url, headers=headers, verify=True, timeout=30
+            )
 
             # Raise an exception if a non-valid status was returned
             response.raise_for_status()
@@ -353,7 +387,7 @@ class CloudflareDDNS():
             # Store the response as JSON formatted data
             response_data = response.json()
 
-        except:
+        except Exception as e:
             # Return False on any exception
             logging.debug("Record ID Request Failed")
             return False
@@ -412,7 +446,9 @@ class CloudflareDDNS():
 
         try:
             # Update the DNS record
-            response = requests.put(url, json=data, headers=headers)
+            response = requests.put(
+                url, json=data, headers=headers, verify=True, timeout=30
+            )
 
             # Raise an exception if a non-valid status was returned
             response.raise_for_status()
@@ -420,7 +456,7 @@ class CloudflareDDNS():
             # Store the response as JSON formatted data
             response_data = response.json()
 
-        except:
+        except Exception as e:
             # Return False on any exception
             logging.debug("DNS Record Request Failed")
             return False
@@ -454,8 +490,8 @@ class CloudflareDDNS():
 def main():
 
     # Get optional VERBOSE environment variable
-    verbose = os.environ.get('VERBOSE')
-    if ((verbose is not None) and (verbose.lower() == "true")):
+    verbose = os.environ.get('VERBOSE', "false")
+    if (verbose.lower() == "true"):
         logging.getLogger().setLevel(logging.DEBUG)
 
     # Get required CLOUDFLARE_API_KEY environment variable
@@ -487,7 +523,7 @@ def main():
     try:
         domain_ttl = int(domain_ttl_env)
         logging.debug("Using provided DOMAIN_TTL value")
-    except:
+    except Exception as e:
         domain_ttl = int(DEFAULT_DOMAIN_TTL)
         logging.debug("Using default DOMAIN_TTL value")
 
@@ -496,7 +532,7 @@ def main():
     try:
         update_rate = int(update_rate_env)
         logging.debug("Using provided UPDATE_RATE value")
-    except:
+    except Exception as e:
         update_rate = int(DEFAULT_UPDATE_RATE)
         logging.debug("Using default UPDATE_RATE value")
 
