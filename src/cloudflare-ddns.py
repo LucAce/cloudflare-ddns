@@ -37,6 +37,7 @@
 
 import sys
 import ipaddress
+import json
 import logging
 import os
 import re
@@ -54,6 +55,14 @@ DEFAULT_DOMAIN_TTL  = 3600
 
 # Default Public IP Address Polling Rate (in seconds)
 DEFAULT_UPDATE_RATE = 900
+
+# Maximum size (in bytes) to read from public IP discovery responses.
+# These responses are tiny and of a known format, so the cap is small.
+MAX_RESPONSE_BYTES = 65536
+
+# Maximum size (in bytes) to read from Cloudflare API responses.
+# A zone's DNS record listing can be large, so the cap is more generous.
+MAX_API_RESPONSE_BYTES = 5 * 1024 * 1024
 
 
 #------------------------------------------------------------------------------
@@ -294,6 +303,66 @@ class CloudflareDDNS():
 
 
     #--------------------------------------------------------------------------
+    # Function: http_get_bounded
+    # Perform an HTTP GET, reading at most max_bytes from the response body to
+    # bound memory usage against an oversized (malicious or misbehaving)
+    # response.
+    #
+    # Parameters:
+    # url       - URL to request
+    # headers   - Optional request headers
+    # max_bytes - Maximum number of bytes to read from the response body
+    #
+    # Returns:
+    # string - UTF-8 decoded response body
+    #--------------------------------------------------------------------------
+    def http_get_bounded(self, url, headers=None, max_bytes=MAX_RESPONSE_BYTES):
+        response = requests.get(
+            url, headers=headers, verify=True, timeout=30, stream=True
+        )
+
+        try:
+            # Raise an exception if a non-valid status was returned
+            response.raise_for_status()
+
+            # Read at most max_bytes + 1 so an oversized body can be detected
+            content = response.raw.read(max_bytes + 1, decode_content=True)
+        finally:
+            response.close()
+
+        if len(content) > max_bytes:
+            raise ValueError("Response exceeded maximum allowed size")
+
+        return content.decode('utf-8')
+
+
+    #--------------------------------------------------------------------------
+    # Function: validate_public_ipv4
+    # Validate that a value is a syntactically valid, globally routable IPv4
+    # address. Rejects private, loopback, reserved, link-local, and other
+    # non-global addresses to prevent pointing DNS at an unintended target.
+    #
+    # Note: This also rejects CGNAT addresses (100.64.0.0/10). In normal
+    # operation the discovery endpoints report the carrier's real public IP
+    # (as seen at the provider edge), not the CGNAT address, so this is not a
+    # problem. If this is ever run somewhere that legitimately needs a
+    # non-global address in DNS, relax this check accordingly.
+    #
+    # Parameters:
+    # value - Candidate IPv4 address
+    #
+    # Returns:
+    # string - Normalized IPv4 address
+    #--------------------------------------------------------------------------
+    @staticmethod
+    def validate_public_ipv4(value):
+        address = ipaddress.IPv4Address(value)
+        if not address.is_global:
+            raise ValueError("IPv4 address is not globally routable")
+        return format(address)
+
+
+    #--------------------------------------------------------------------------
     # Function: get_public_ipv4
     # Request the public IPv4 address from Cloudflare cdn-cgi/trace with a
     # fallback request to ipify.org.
@@ -302,57 +371,53 @@ class CloudflareDDNS():
     # bool - True if successful; False otherwise
     #--------------------------------------------------------------------------
     def get_public_ipv4(self):
-        self.ipv4     = None
-        response_data = None
+        self.ipv4 = None
 
         # Get the IPv4 address from Cloudflare's trace
         try:
             # Query for the public IPv4 address
             url = 'https://api.cloudflare.com/cdn-cgi/trace'
-            response = requests.get(url, verify=True, timeout=30)
+            content = self.http_get_bounded(url)
 
-            # Raise an exception if a non-valid status was returned
-            response.raise_for_status()
+            # Find and extract the ip value using an exact key match
+            ipv4 = None
+            for line in content.splitlines():
+                if line.startswith('ip='):
+                    ipv4 = line[len('ip='):].split()[0]
+                    break
 
-            # Find and extract the ip value
-            for line in response.iter_lines():
-                line_utf8 = line.decode('utf-8')
+            if ipv4 is None:
+                raise ValueError("No 'ip' value found in trace response")
 
-                if 'ip=' in line_utf8:
-                    ipv4 = line_utf8.split('ip=')[1].split()[0]
-
-            # Validate the response data
-            self.ipv4 = format(ipaddress.IPv4Address(ipv4))
+            # Validate the response data, requiring a public address
+            self.ipv4 = self.validate_public_ipv4(ipv4)
 
             # Return True if no exceptions were raised
             return True
 
         except Exception as e:
             # Return False on any exception
-            logging.debug("Public IPv4 Request from Cloudflare Failed")
+            logging.debug(f"Public IPv4 Request from Cloudflare Failed: {e}")
             pass
 
         # Fall back to ipify for IPv4 if first attempt failed
         try:
             # Query for the public IPv4 address
             url = 'https://api.ipify.org?format=json'
-            response = requests.get(url, verify=True, timeout=30)
+            content = self.http_get_bounded(url)
 
-            # Raise an exception if a non-valid status was returned
-            response.raise_for_status()
+            # Parse the response as JSON formatted data
+            response_data = json.loads(content)
 
-            # Store the response as JSON formatted data
-            response_data = response.json()
-
-            # Validate and parse the response data
-            self.ipv4 = format(ipaddress.IPv4Address(response_data.get("ip")))
+            # Validate the response data, requiring a public address
+            self.ipv4 = self.validate_public_ipv4(response_data.get("ip"))
 
             # Return True if no exceptions were raised
             return True
 
         except Exception as e:
             # Return False on any exception
-            logging.debug("Public IPv4 Request from ipify Failed")
+            logging.debug(f"Public IPv4 Request from ipify Failed: {e}")
             return False
 
 
@@ -376,20 +441,17 @@ class CloudflareDDNS():
         }
 
         try:
-            # Query for the Record IDs
-            response = requests.get(
-                url, headers=headers, verify=True, timeout=30
+            # Query for the Record IDs (bounded read to limit memory use)
+            content = self.http_get_bounded(
+                url, headers=headers, max_bytes=MAX_API_RESPONSE_BYTES
             )
 
-            # Raise an exception if a non-valid status was returned
-            response.raise_for_status()
-
             # Store the response as JSON formatted data
-            response_data = response.json()
+            response_data = json.loads(content)
 
         except Exception as e:
             # Return False on any exception
-            logging.debug("Record ID Request Failed")
+            logging.debug(f"Record ID Request Failed: {e}")
             return False
 
         # Verify the query was successful
