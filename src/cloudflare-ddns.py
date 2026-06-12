@@ -64,6 +64,12 @@ MAX_RESPONSE_BYTES = 65536
 # A zone's DNS record listing can be large, so the cap is more generous.
 MAX_API_RESPONSE_BYTES = 5 * 1024 * 1024
 
+# Maximum total time (in seconds) to wait for a complete response body.
+# The requests timeout only bounds the connect and individual socket
+# reads, so without this a server trickling data could hold a request
+# open indefinitely.
+MAX_RESPONSE_SECONDS = 60
+
 
 #------------------------------------------------------------------------------
 # Logging Configuration
@@ -96,6 +102,7 @@ class CloudflareDDNS():
         self.domain_name = self.sanitize_domain(domain_name)
         self.domain_ttl  = self.sanitize_ttl(domain_ttl)
         self.record_id   = None
+        self.proxied     = False
         self.ipv4        = None
         self.ipv4_lkg    = None
 
@@ -299,14 +306,65 @@ class CloudflareDDNS():
             logging.warning("TTL Failed Sanitization, Using Default")
             ttl = int(DEFAULT_DOMAIN_TTL)
 
+        # Ensure a minimum TTL value
+        ttl = max(30, ttl)
+
+        # Ensure a maximum TTL value
+        ttl = min(86400, ttl)
+
         return ttl
 
 
     #--------------------------------------------------------------------------
+    # Function: http_request_bounded
+    # Perform an HTTP request, reading at most max_bytes from the response
+    # body to bound memory usage against an oversized (malicious or
+    # misbehaving) response.
+    #
+    # Parameters:
+    # method    - HTTP method (e.g., 'GET', 'PATCH')
+    # url       - URL to request
+    # headers   - Optional request headers
+    # json_data - Optional JSON request body
+    # max_bytes - Maximum number of bytes to read from the response body
+    #
+    # Returns:
+    # string - UTF-8 decoded response body
+    #--------------------------------------------------------------------------
+    def http_request_bounded(self, method, url, headers=None, json_data=None,
+                             max_bytes=MAX_RESPONSE_BYTES):
+        response = requests.request(
+            method, url, headers=headers, json=json_data,
+            verify=True, timeout=30, stream=True
+        )
+
+        try:
+            # Raise an exception if a non-valid status was returned
+            response.raise_for_status()
+
+            # Accumulate the body in chunks, counting decompressed bytes so
+            # that max_bytes bounds memory use even when the response is
+            # compressed, and enforcing a wall-clock deadline so a slowly
+            # trickling response cannot hold the request open indefinitely
+            deadline = time.monotonic() + MAX_RESPONSE_SECONDS
+            chunks = []
+            received = 0
+            for chunk in response.iter_content(chunk_size=1024):
+                if time.monotonic() > deadline:
+                    raise ValueError("Response exceeded maximum allowed time")
+                received += len(chunk)
+                if received > max_bytes:
+                    raise ValueError("Response exceeded maximum allowed size")
+                chunks.append(chunk)
+        finally:
+            response.close()
+
+        return b''.join(chunks).decode('utf-8')
+
+
+    #--------------------------------------------------------------------------
     # Function: http_get_bounded
-    # Perform an HTTP GET, reading at most max_bytes from the response body to
-    # bound memory usage against an oversized (malicious or misbehaving)
-    # response.
+    # Perform an HTTP GET with a bounded response read.
     #
     # Parameters:
     # url       - URL to request
@@ -317,23 +375,9 @@ class CloudflareDDNS():
     # string - UTF-8 decoded response body
     #--------------------------------------------------------------------------
     def http_get_bounded(self, url, headers=None, max_bytes=MAX_RESPONSE_BYTES):
-        response = requests.get(
-            url, headers=headers, verify=True, timeout=30, stream=True
+        return self.http_request_bounded(
+            'GET', url, headers=headers, max_bytes=max_bytes
         )
-
-        try:
-            # Raise an exception if a non-valid status was returned
-            response.raise_for_status()
-
-            # Read at most max_bytes + 1 so an oversized body can be detected
-            content = response.raw.read(max_bytes + 1, decode_content=True)
-        finally:
-            response.close()
-
-        if len(content) > max_bytes:
-            raise ValueError("Response exceeded maximum allowed size")
-
-        return content.decode('utf-8')
 
 
     #--------------------------------------------------------------------------
@@ -469,6 +513,8 @@ class CloudflareDDNS():
                  "name" in entry and
                  str(entry["type"].upper()) == "A" and
                  str(entry["name"].lower()) == str(self.domain_name).lower() ):
+                # Cloudflare manages the TTL of proxied records (TTL of 1)
+                self.proxied = entry.get("proxied") is True
                 self.record_id = self.sanitize_id(str(entry["id"]))
                 if self.record_id is None:
                     logging.debug("Invalid Record ID")
@@ -503,20 +549,17 @@ class CloudflareDDNS():
             'type': 'A',
             'name': f'{self.domain_name}',
             'content': f'{self.ipv4}',
-            'ttl': int(self.domain_ttl)
+            'ttl': 1 if self.proxied else int(self.domain_ttl)
         }
 
         try:
-            # Update the DNS record
-            response = requests.put(
-                url, json=data, headers=headers, verify=True, timeout=30
+            # Update the DNS record (bounded read to limit memory use)
+            content = self.http_request_bounded(
+                'PATCH', url, headers=headers, json_data=data
             )
 
-            # Raise an exception if a non-valid status was returned
-            response.raise_for_status()
-
             # Store the response as JSON formatted data
-            response_data = response.json()
+            response_data = json.loads(content)
 
         except Exception as e:
             # Return False on any exception
@@ -589,6 +632,9 @@ def main():
         domain_ttl = int(DEFAULT_DOMAIN_TTL)
         logging.debug("Using default DOMAIN_TTL value")
 
+    # Ensure a minimum 30 second TTL
+    domain_ttl = max(30, domain_ttl)
+
     # Get optional UPDATE_RATE environment variable
     update_rate_env = os.environ.get('UPDATE_RATE')
     try:
@@ -598,17 +644,23 @@ def main():
         update_rate = int(DEFAULT_UPDATE_RATE)
         logging.debug("Using default UPDATE_RATE value")
 
+    # Ensure a minimum 1 minute update rate
+    update_rate = max(60, update_rate)
+
     # Create update object
     ddns = CloudflareDDNS(
         cloudflare_api_key, cloudflare_zone_id, domain_name, domain_ttl
     )
 
-    # Loop forever
+    # Loop forever, surviving unexpected update failures (e.g., a
+    # non-schema-conforming API response) so that one bad cycle does not
+    # terminate the daemon
     while True:
-        ddns.update()
+        try:
+            ddns.update()
+        except Exception as e:
+            logging.error(f"Update Cycle Failed: {e}")
         time.sleep(update_rate)
-
-    sys.exit(1)
 
 
 #------------------------------------------------------------------------------
